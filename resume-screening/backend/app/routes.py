@@ -1,0 +1,443 @@
+from flask import Blueprint, request, jsonify, current_app
+import uuid
+import os
+from werkzeug.utils import secure_filename
+from datetime import datetime
+from app.services import TextractService, ComprehendService, DynamoDBService, MatchingService, S3Service
+
+api_bp = Blueprint('api', __name__)
+
+# Initialize services
+textract_service = TextractService()
+comprehend_service = ComprehendService()
+dynamodb_service = DynamoDBService()
+matching_service = MatchingService()
+s3_service = S3Service()
+
+# Helper function to check allowed files
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in current_app.config['ALLOWED_EXTENSIONS']
+
+@api_bp.route('/resumes/upload', methods=['POST'])
+def upload_resumes():
+    """
+    Upload resumes for processing with skill extraction and job matching
+    Expected: multipart/form-data with files and job_id
+    """
+    try:
+        # Check if files are present
+        if 'files' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
+        
+        files = request.files.getlist('files')
+        job_id = request.form.get('job_id')
+        
+        if not job_id:
+            return jsonify({'error': 'job_id is required'}), 400
+        
+        if not files or len(files) == 0:
+            return jsonify({'error': 'At least one file is required'}), 400
+        
+        # Validate all files before processing
+        for file in files:
+            if file.filename == '':
+                return jsonify({'error': 'Empty filename'}), 400
+            if not allowed_file(file.filename):
+                return jsonify({'error': f'Invalid file type: {file.filename}. Only PDF files allowed'}), 400
+        
+        # Create batch ID
+        batch_id = str(uuid.uuid4())
+        
+        # Save files and extract text
+        batch_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], batch_id)
+        os.makedirs(batch_folder, exist_ok=True)
+        
+        saved_files = []
+        extracted_texts = []
+        matched_results = []
+        
+        for idx, file in enumerate(files):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(batch_folder, filename)
+            file.save(filepath)
+            
+            candidate_id = f"cand_{idx + 1}"
+            
+            # Extract text using Textract
+            current_app.logger.info(f'Batch {batch_id}: Extracting text from {filename}')
+            textract_result = textract_service.extract_text_from_pdf(filepath)
+            
+            file_data = {
+                'filename': filename,
+                'path': filepath,
+                'size': os.path.getsize(filepath),
+                'candidate_id': candidate_id,
+                'textract_status': textract_result['status'],
+                'textract_confidence': textract_result.get('confidence', 0),
+                'pages': textract_result.get('pages', 0)
+            }
+            
+            if textract_result['status'] == 'success':
+                file_data['text'] = textract_result.get('text', '')
+                
+                # ✅ NEW: Upload PDF to S3 for cloud storage
+                current_app.logger.info(f'Batch {batch_id}: Uploading {filename} to S3')
+                s3_result = s3_service.upload_file(filepath, batch_id, filename)
+                
+                if s3_result['status'] == 'success':
+                    s3_url = s3_result.get('s3_url')
+                    file_data['s3_url'] = s3_url
+                    file_data['s3_key'] = s3_result.get('s3_key')
+                    current_app.logger.info(f'Batch {batch_id}: Successfully uploaded {filename} to S3: {s3_url}')
+                else:
+                    current_app.logger.warning(f'Batch {batch_id}: S3 upload failed for {filename}: {s3_result.get("error")}')
+                    s3_url = None
+                
+                # Extract skills using Comprehend
+                current_app.logger.info(f'Batch {batch_id}: Extracting skills from {filename}')
+                comprehend_result = comprehend_service.extract_skills(textract_result['text'])
+                
+                if comprehend_result['status'] == 'success':
+                    file_data['skills'] = comprehend_result.get('skills', [])
+                    file_data['job_titles'] = comprehend_result.get('job_titles', [])
+                    file_data['experience_level'] = comprehend_result.get('experience_level')
+                    file_data['skill_count'] = comprehend_result.get('skill_count', 0)
+                    
+                    extracted_texts.append({
+                        'filename': filename,
+                        'text': textract_result['text'],
+                        'confidence': textract_result['confidence'],
+                        'pages': textract_result['pages'],
+                        'skills': comprehend_result.get('skills', []),
+                        'job_titles': comprehend_result.get('job_titles', []),
+                        'experience_level': comprehend_result.get('experience_level'),
+                        'skill_count': comprehend_result.get('skill_count', 0)
+                    })
+                    current_app.logger.info(f'Batch {batch_id}: Extracted {comprehend_result.get("skill_count", 0)} skills from {filename}')
+                    
+                    # ✅ NEW: Match candidate skills against job requirements
+                    current_app.logger.info(f'Batch {batch_id}: Matching skills against job {job_id}')
+                    match_result = matching_service.match_candidate_to_job(
+                        job_id,
+                        comprehend_result.get('skills', []),
+                        comprehend_result.get('experience_level')
+                    )
+                    
+                    if match_result['status'] == 'success':
+                        file_data['match_percentage'] = match_result.get('match_percentage', 0)
+                        file_data['matched_skills'] = match_result.get('matched_skills', [])
+                        file_data['missing_skills'] = match_result.get('missing_skills', [])
+                        file_data['bonus_skills'] = match_result.get('bonus_skills', [])
+                        file_data['match_status'] = match_result.get('match_status', 'unknown')
+                        file_data['experience_match'] = match_result.get('experience_match')
+                        
+                        matched_results.append({
+                            'candidate_id': candidate_id,
+                            'filename': filename,
+                            'match_percentage': match_result.get('match_percentage', 0),
+                            'match_status': match_result.get('match_status', 'unknown'),
+                            'matched_skills': match_result.get('matched_skills', []),
+                            'missing_skills': match_result.get('missing_skills', []),
+                            'bonus_skills': match_result.get('bonus_skills', []),
+                            'experience_match': match_result.get('experience_match')
+                        })
+                        
+                        # ✅ NEW: Save match result to DynamoDB
+                        current_app.logger.info(f'Batch {batch_id}: Saving match result for {filename} to DynamoDB')
+                        dynamodb_save = matching_service.save_match_result(
+                            batch_id,
+                            candidate_id,
+                            job_id,
+                            filename,
+                            comprehend_result.get('skills', []),
+                            comprehend_result.get('job_titles', []),
+                            comprehend_result.get('experience_level'),
+                            textract_result.get('confidence', 0),
+                            0.95,  # Default comprehend confidence for now
+                            match_result,
+                            s3_url=s3_url  # ✅ NEW: Pass S3 URL
+                        )
+                        
+                        if dynamodb_save['status'] != 'success':
+                            current_app.logger.warning(f'Batch {batch_id}: DynamoDB save failed - {dynamodb_save.get("error")}')
+                    else:
+                        current_app.logger.warning(f'Batch {batch_id}: Skill matching failed for {filename}: {match_result.get("error")}')
+                        file_data['match_status'] = 'error'
+                        file_data['match_error'] = match_result.get('error')
+                else:
+                    current_app.logger.warning(f'Batch {batch_id}: Skill extraction failed for {filename}: {comprehend_result.get("error")}')
+                    file_data['skills'] = []
+                    file_data['skill_extraction_status'] = 'failed'
+                    file_data['skill_extraction_error'] = comprehend_result.get('error')
+            else:
+                current_app.logger.warning(f'Batch {batch_id}: Failed to extract text from {filename}: {textract_result.get("error")}')
+            
+            saved_files.append(file_data)
+        
+        current_app.logger.info(f'Batch {batch_id}: Received {len(saved_files)} resumes from job {job_id}')
+        
+        # Calculate batch statistics
+        successful_matches = len([f for f in saved_files if f.get('match_status') in ['strong_match', 'partial_match']])
+        avg_match_percentage = (sum([f.get('match_percentage', 0) for f in saved_files]) / len(saved_files)) if saved_files else 0
+        
+        return jsonify({
+            'batch_id': batch_id,
+            'job_id': job_id,
+            'status': 'processing_complete',
+            'files_received': len(saved_files),
+            'files': saved_files,
+            'extracted_texts': extracted_texts,
+            'matched_results': matched_results,
+            'extraction_summary': {
+                'total_files': len(saved_files),
+                'successful_text_extractions': len([f for f in saved_files if f.get('textract_status') == 'success']),
+                'successful_skill_extractions': len([f for f in saved_files if f.get('skills') is not None]),
+                'total_skills_found': sum([f.get('skill_count', 0) for f in saved_files]),
+                'successful_matches': successful_matches,
+                'avg_match_percentage': round(avg_match_percentage, 2)
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'message': f'Successfully processed {len(saved_files)} resumes and matched against job {job_id}.'
+        }), 200
+    
+    except Exception as e:
+        current_app.logger.error(f'Error uploading resumes: {str(e)}')
+        return jsonify({'error': 'Upload failed', 'message': str(e)}), 500
+
+@api_bp.route('/jobs/parse', methods=['POST'])
+def parse_job_description():
+    """
+    Parse job description to extract required skills using Comprehend
+    Expected: JSON with job_description field
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'job_description' not in data:
+            return jsonify({'error': 'job_description is required'}), 400
+        
+        job_description = data['job_description']
+        
+        if not job_description or len(job_description) < 20:
+            return jsonify({'error': 'job_description must be at least 20 characters'}), 400
+        
+        # Generate job ID
+        job_id = f"job_{uuid.uuid4().hex[:8]}"
+        
+        # Parse job description using Comprehend
+        current_app.logger.info(f'Job {job_id}: Parsing job description with Comprehend')
+        comprehend_result = comprehend_service.parse_job_description(job_description)
+        
+        if comprehend_result['status'] == 'success':
+            current_app.logger.info(f'Job {job_id}: Successfully parsed - {len(comprehend_result["required_skills"])} required skills')
+            
+            # ✅ NEW: Save job to DynamoDB for reference during candidate matching
+            dynamodb_save = dynamodb_service.save_job(job_id, {
+                'job_title': comprehend_result.get('job_title'),
+                'job_description': job_description,
+                'required_skills': comprehend_result['required_skills'],
+                'nice_to_have_skills': comprehend_result['nice_to_have_skills'],
+                'experience_level': comprehend_result['experience_level'],
+                'experience_years': comprehend_result['experience_years']
+            })
+            
+            if dynamodb_save['status'] != 'success':
+                current_app.logger.warning(f'Job {job_id}: DynamoDB save failed - {dynamodb_save.get("error")}')
+            
+            return jsonify({
+                'job_id': job_id,
+                'status': 'parsed',
+                'job_title': comprehend_result.get('job_title'),
+                'description_length': len(job_description),
+                'required_skills': comprehend_result['required_skills'],
+                'nice_to_have_skills': comprehend_result['nice_to_have_skills'],
+                'experience_level': comprehend_result['experience_level'],
+                'experience_years': comprehend_result['experience_years'],
+                'message': f'Successfully parsed job description. Found {len(comprehend_result["required_skills"])} required skills.'
+            }), 200
+        else:
+            current_app.logger.error(f'Job {job_id}: Parse failed - {comprehend_result.get("error")}')
+            return jsonify({
+                'error': 'Job parsing failed',
+                'message': comprehend_result.get('error')
+            }), 500
+    
+    except Exception as e:
+        current_app.logger.error(f'Error parsing job description: {str(e)}')
+        return jsonify({'error': 'Parse failed', 'message': str(e)}), 500
+
+@api_bp.route('/jobs', methods=['GET'])
+def get_all_jobs():
+    """
+    Get all saved jobs from DynamoDB
+    Returns list of all jobs with their requirements
+    """
+    try:
+        current_app.logger.info('Fetching all jobs from DynamoDB')
+        
+        all_jobs = dynamodb_service.get_all_jobs()
+        
+        if not all_jobs:
+            return jsonify({
+                'status': 'success',
+                'jobs': [],
+                'total': 0,
+                'message': 'No jobs found'
+            }), 200
+        
+        # Convert Decimal values to float for JSON serialization
+        for job in all_jobs:
+            if 'created_at' in job:
+                job['created_at'] = str(job['created_at'])
+            if 'experience_years' in job:
+                job['experience_years'] = float(job.get('experience_years', 0))
+        
+        current_app.logger.info(f'Retrieved {len(all_jobs)} jobs from DynamoDB')
+        
+        return jsonify({
+            'status': 'success',
+            'jobs': all_jobs,
+            'total': len(all_jobs),
+            'message': f'Retrieved {len(all_jobs)} jobs'
+        }), 200
+    
+    except Exception as e:
+        current_app.logger.error(f'Error fetching jobs: {str(e)}')
+        return jsonify({'error': 'Fetch failed', 'message': str(e)}), 500
+
+@api_bp.route('/results/<batch_id>', methods=['GET'])
+def get_results(batch_id):
+    """
+    Get processing results and ranked candidates for a batch from DynamoDB
+    """
+    try:
+        # ✅ Query DynamoDB for batch results
+        ranked_candidates = matching_service.get_batch_ranked_results(batch_id)
+        
+        if not ranked_candidates:
+            return jsonify({
+                'batch_id': batch_id,
+                'status': 'not_found',
+                'message': 'No results found for this batch',
+                'candidates': []
+            }), 404
+        
+        # Calculate summary statistics
+        total_candidates = len(ranked_candidates)
+        strong_matches = len([c for c in ranked_candidates if c.get('status') == 'strong_match'])
+        partial_matches = len([c for c in ranked_candidates if c.get('status') == 'partial_match'])
+        not_qualified = len([c for c in ranked_candidates if c.get('status') == 'not_qualified'])
+        avg_match_percentage = (sum([float(c.get('match_percentage', 0)) for c in ranked_candidates]) / total_candidates) if ranked_candidates else 0
+        
+        # Convert Decimal values to float for JSON serialization
+        for candidate in ranked_candidates:
+            if 'match_percentage' in candidate:
+                candidate['match_percentage'] = float(candidate['match_percentage'])
+            if 'textract_confidence' in candidate:
+                candidate['textract_confidence'] = float(candidate['textract_confidence'])
+            if 'comprehend_confidence' in candidate:
+                candidate['comprehend_confidence'] = float(candidate['comprehend_confidence'])
+        
+        current_app.logger.info(f'Retrieved {total_candidates} candidates from batch {batch_id}')
+        
+        return jsonify({
+            'batch_id': batch_id,
+            'status': 'complete',
+            'summary': {
+                'total_candidates': total_candidates,
+                'strong_matches': strong_matches,
+                'partial_matches': partial_matches,
+                'not_qualified': not_qualified,
+                'avg_match_percentage': round(avg_match_percentage, 2)
+            },
+            'candidates': ranked_candidates,
+            'message': f'Found {total_candidates} candidates: {strong_matches} strong matches, {partial_matches} partial matches, {not_qualified} not qualified.'
+        }), 200
+    
+    except Exception as e:
+        current_app.logger.error(f'Error getting results: {str(e)}')
+        return jsonify({'error': 'Retrieval failed', 'message': str(e)}), 500
+
+@api_bp.route('/status/<batch_id>', methods=['GET'])
+def get_status(batch_id):
+    """
+    Get processing status for a batch
+    """
+    try:
+        # TODO: Implement status check from DynamoDB
+        
+        return jsonify({
+            'batch_id': batch_id,
+            'status': 'pending',
+            'progress': 0,
+            'message': 'Processing not started yet'
+        }), 200
+    
+    except Exception as e:
+        current_app.logger.error(f'Error getting status: {str(e)}')
+        return jsonify({'error': 'Status check failed', 'message': str(e)}), 500
+
+@api_bp.route('/download/<batch_id>/<filename>', methods=['GET'])
+def download_resume(batch_id, filename):
+    """
+    Generate presigned URL for downloading a resume from S3
+    Allows users to access their uploaded PDFs with time-limited access (1 hour)
+    """
+    try:
+        # Construct S3 key based on storage pattern: resumes/{batch_id}/{filename}
+        s3_key = f"resumes/{batch_id}/{filename}"
+        
+        current_app.logger.info(f'Generating presigned URL for {s3_key}')
+        
+        # Get presigned URL from S3 service (expires in 1 hour)
+        presigned_result = s3_service.get_presigned_url(s3_key, expiration=3600)
+        
+        if presigned_result['status'] == 'success':
+            return jsonify({
+                'status': 'success',
+                'download_url': presigned_result.get('url'),
+                'expires_in_seconds': 3600,
+                'message': 'Presigned URL generated successfully'
+            }), 200
+        else:
+            current_app.logger.warning(f'Failed to generate presigned URL: {presigned_result.get("error")}')
+            return jsonify({
+                'error': 'Failed to generate download URL',
+                'message': presigned_result.get('error')
+            }), 500
+    
+    except Exception as e:
+        current_app.logger.error(f'Error generating presigned URL: {str(e)}')
+        return jsonify({'error': 'Download URL generation failed', 'message': str(e)}), 500
+
+@api_bp.route('/batches', methods=['GET'])
+def get_all_batches():
+    """
+    Get all batches with summary statistics
+    Useful for dashboard/overview page
+    """
+    try:
+        current_app.logger.info('Fetching all batches from DynamoDB')
+        
+        all_batches = dynamodb_service.get_all_batches()
+        
+        if not all_batches:
+            return jsonify({
+                'status': 'success',
+                'batches': [],
+                'total': 0,
+                'message': 'No batches found'
+            }), 200
+        
+        current_app.logger.info(f'Retrieved {len(all_batches)} batches from DynamoDB')
+        
+        return jsonify({
+            'status': 'success',
+            'batches': all_batches,
+            'total': len(all_batches),
+            'message': f'Retrieved {len(all_batches)} batches'
+        }), 200
+    
+    except Exception as e:
+        current_app.logger.error(f'Error fetching batches: {str(e)}')
+        return jsonify({'error': 'Fetch failed', 'message': str(e)}), 500

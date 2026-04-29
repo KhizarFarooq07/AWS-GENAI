@@ -1,0 +1,78 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 800 >>
+stream
+BT
+/F1 14 Tf
+50 750 Td
+(John Smith) Tj
+0 -20 Td
+/F1 10 Tf
+(Senior Python Developer | AWS Specialist) Tj
+0 -15 Td
+(Email: john@example.com) Tj
+0 -25 Td
+/F1 11 Tf
+(TECHNICAL SKILLS) Tj
+0 -15 Td
+/F1 9 Tf
+(Languages: Python, Java, Go, JavaScript, TypeScript) Tj
+0 -12 Td
+(Frameworks: FastAPI, Django, Flask, Spring Boot, React) Tj
+0 -12 Td
+(Cloud Services: AWS, Azure, GCP, Docker, Kubernetes) Tj
+0 -12 Td
+(Databases: PostgreSQL, MongoDB, Redis, DynamoDB, MySQL) Tj
+0 -12 Td
+(DevOps: Terraform, Jenkins, GitLab CI, GitHub Actions, Agile) Tj
+0 -25 Td
+/F1 11 Tf
+(EXPERIENCE) Tj
+0 -15 Td
+/F1 9 Tf
+(Senior Python Developer - TechCorp (2022-Present)) Tj
+0 -12 Td
+/F1 8 Tf
+(Led development of microservices using FastAPI and AWS services) Tj
+0 -10 Td
+(Managed Kubernetes clusters and Docker containerization) Tj
+0 -10 Td
+(Implemented CI/CD pipelines with Jenkins and GitLab CI) Tj
+0 -15 Td
+/F1 9 Tf
+(Python Developer - StartupXYZ (2018-2022)) Tj
+0 -12 Td
+/F1 8 Tf
+(Built REST APIs and GraphQL services using FastAPI and Django) Tj
+0 -10 Td
+(Working with PostgreSQL, MongoDB, and Redis databases) Tj
+0 -10 Td
+(Collaborated on microservices architecture with Kubernetes) Tj
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000244 00000 n 
+0000000331 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1230
+%%EOF

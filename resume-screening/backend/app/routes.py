@@ -250,13 +250,14 @@ def get_results(batch_id):
         # ✅ Query DynamoDB for batch results
         ranked_candidates = matching_service.get_batch_ranked_results(batch_id)
         
+        # Return 200 OK even if no results yet (processing in progress)
         if not ranked_candidates:
             return jsonify({
                 'batch_id': batch_id,
-                'status': 'not_found',
-                'message': 'No results found for this batch',
+                'status': 'processing',
+                'message': 'Processing in progress, no results yet',
                 'candidates': []
-            }), 404
+            }), 200
         
         # Calculate summary statistics
         total_candidates = len(ranked_candidates)

@@ -22,8 +22,8 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Config
-S3_BUCKET = 'resume-screening-khizar'
-BATCH_TABLE = 'batch_processing_status'
+S3_BUCKET = os.getenv('S3_BUCKET_NAME', 'resume-screening-khizar-v2')
+BATCH_TABLE = os.getenv('DYNAMODB_BATCH_STATUS_TABLE', 'batch_processing_status')
 
 # Services will be initialized on first use
 _services = {}

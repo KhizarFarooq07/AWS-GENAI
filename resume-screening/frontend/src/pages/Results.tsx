@@ -18,7 +18,7 @@ export default function Results() {
 
   // Polling effect for batch status
   useEffect(() => {
-    let pollInterval = null;
+    let pollInterval: NodeJS.Timeout | null = null;
 
     const fetchBatchStatus = async () => {
       try {
@@ -35,6 +35,11 @@ export default function Results() {
           setIsProcessing(false);
           // Fetch final results when processing is complete
           fetchResults();
+          // STOP POLLING when completed
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
         }
       } catch (err: any) {
         console.error('Failed to fetch batch status:', err);

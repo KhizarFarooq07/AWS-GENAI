@@ -2,32 +2,66 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { ArrowLeft, Download, ExternalLink } from 'lucide-react';
-import api, { ResultsResponse } from '../services/api';
+import api, { ResultsResponse, BatchStatusResponse } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function Results() {
   const { batchId } = useParams<{ batchId: string }>();
   const navigate = useNavigate();
   const [results, setResults] = useState<ResultsResponse | null>(null);
+  const [batchStatus, setBatchStatus] = useState<BatchStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number>(0);
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
+  // Polling effect for batch status
   useEffect(() => {
+    let pollInterval = null;
+
+    const fetchBatchStatus = async () => {
+      try {
+        if (!batchId) throw new Error('Batch ID not provided');
+        const status = await api.getBatchStatus(batchId);
+        setBatchStatus(status);
+
+        // If still processing, continue polling
+        if (status.status === 'processing' || status.status === 'pending') {
+          setIsProcessing(true);
+          // Fetch partial results while processing
+          fetchResults();
+        } else if (status.status === 'completed') {
+          setIsProcessing(false);
+          // Fetch final results when processing is complete
+          fetchResults();
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch batch status:', err);
+      }
+    };
+
     const fetchResults = async () => {
       try {
         if (!batchId) throw new Error('Batch ID not provided');
         const data = await api.getResults(batchId);
         setResults(data);
+        setLoading(false);
       } catch (err: any) {
         setError(err.response?.data?.message || 'Failed to fetch results');
-      } finally {
         setLoading(false);
       }
     };
 
-    fetchResults();
+    // Initial fetch
+    fetchBatchStatus();
+
+    // Set up polling every 2 seconds while processing
+    pollInterval = setInterval(fetchBatchStatus, 2000);
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [batchId]);
 
   const handleDownload = async (filename: string) => {
@@ -46,6 +80,145 @@ export default function Results() {
     }
   };
 
+  // Processing state - show progress
+  if (isProcessing && batchStatus) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => navigate('/')}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+              <div>
+                <h1 className="text-4xl font-bold text-gray-900">Processing Resumes</h1>
+                <p className="text-sm text-gray-500 font-mono mt-1">Batch: {batchId}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Progress Section */}
+        <div className="space-y-6">
+          {/* Status Card */}
+          <div className="card">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Status</p>
+                <p className="text-lg font-semibold text-blue-600 capitalize">
+                  {batchStatus.status}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Progress</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {batchStatus.processed_files} / {batchStatus.total_files}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Completion</p>
+                <p className="text-lg font-semibold text-purple-600">
+                  {Math.round(batchStatus.completion_percentage)}%
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Errors</p>
+                <p className={`text-lg font-semibold ${batchStatus.failed_files > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {batchStatus.failed_files}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="card">
+            <p className="text-sm font-medium text-gray-700 mb-2">Overall Progress</p>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div
+                className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                style={{ width: `${batchStatus.completion_percentage}%` }}
+              ></div>
+            </div>
+            <p className="text-right text-xs text-gray-600 mt-2">
+              {Math.round(batchStatus.completion_percentage)}%
+            </p>
+          </div>
+
+          {/* Resume Processing Status */}
+          <div className="card">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Resume Processing</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Completed:</span>
+                <span className="font-semibold text-green-600">{batchStatus.processed_files}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Failed:</span>
+                <span className={`font-semibold ${batchStatus.failed_files > 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                  {batchStatus.failed_files}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Remaining:</span>
+                <span className="font-semibold text-yellow-600">
+                  {batchStatus.total_files - batchStatus.processed_files - batchStatus.failed_files}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Error Log */}
+          {batchStatus.errors && batchStatus.errors.length > 0 && (
+            <div className="card bg-red-50 border border-red-200">
+              <h3 className="text-sm font-medium text-red-700 mb-2">Errors</h3>
+              <div className="space-y-1 text-xs max-h-40 overflow-auto">
+                {batchStatus.errors.map((err: any, idx: number) => (
+                  <div key={idx} className="text-red-600 border-b border-red-200 pb-2 last:border-b-0">
+                    <p className="font-semibold">{err.filename || err.candidate_id}</p>
+                    <p className="font-mono text-red-700">{err.error_message}</p>
+                    {err.timestamp && <p className="text-gray-500 text-xs">{new Date(err.timestamp).toLocaleTimeString()}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Partial Results While Processing */}
+          {results && results.candidates && results.candidates.length > 0 && (
+            <div className="card">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">Results So Far</h3>
+              <div className="space-y-2">
+                {results.candidates.map((candidate, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{candidate.filename}</p>
+                      <p className="text-xs text-gray-500">{candidate.status || 'processed'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-blue-600">{Math.round(candidate.match_percentage)}%</p>
+                      <p className="text-xs text-gray-600 capitalize">{candidate.status || 'match'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Loading Animation */}
+          <div className="card text-center">
+            <LoadingSpinner />
+            <p className="text-gray-600 mt-4">Processing your resumes...</p>
+            <p className="text-sm text-gray-500 mt-2">This page will update automatically every 2 seconds</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto">
@@ -54,6 +227,7 @@ export default function Results() {
     );
   }
 
+  // Error state
   if (error) {
     return (
       <div className="max-w-4xl mx-auto">

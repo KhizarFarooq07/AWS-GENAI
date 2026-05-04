@@ -27,9 +27,7 @@ class DynamoDBService:
         self.dynamodb = boto3.resource(
             'dynamodb',
             region_name=self.region,
-            config=retry_config,
-            aws_access_key_id=config.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY
+            config=retry_config
         )
         
         # Table names - aligned with existing DynamoDB setup

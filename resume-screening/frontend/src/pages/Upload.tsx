@@ -15,7 +15,6 @@ export default function Upload({ jobId: propJobId }: UploadProps) {
   const [loading, setLoading] = useState(false);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
   const [jobs, setJobs] = useState<JobData[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [showJobSelector, setShowJobSelector] = useState(false);
@@ -88,17 +87,16 @@ export default function Upload({ jobId: propJobId }: UploadProps) {
 
     try {
       const result = await api.uploadResumes(files, selectedJobId);
-      setResult(result);
+      // HTTP 202 Accepted - processing started
+      // Redirect to Results page for polling
+      if (result.batch_id) {
+        setTimeout(() => {
+          navigate(`/results/${result.batch_id}`);
+        }, 500);
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to upload resumes');
-    } finally {
       setLoading(false);
-    }
-  };
-
-  const handleViewResults = () => {
-    if (result?.batch_id) {
-      navigate(`/results/${result.batch_id}`);
     }
   };
 
@@ -257,84 +255,15 @@ export default function Upload({ jobId: propJobId }: UploadProps) {
         <div>
           {loading ? (
             <div className="card">
-              <LoadingSpinner />
-            </div>
-          ) : result ? (
-            <div className="space-y-4">
-              {/* Summary */}
-              <div className="card">
-                <h3 className="text-sm font-medium text-gray-500 mb-4">Processing Summary</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {result.extraction_summary?.total_files}
-                    </p>
-                    <p className="text-sm text-gray-600">Files Processed</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-blue-600">
-                      {result.extraction_summary?.successful_matches}
-                    </p>
-                    <p className="text-sm text-gray-600">Matched</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-green-600">
-                      {result.extraction_summary?.total_skills_found}
-                    </p>
-                    <p className="text-sm text-gray-600">Skills Found</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-purple-600">
-                      {result.extraction_summary?.avg_match_percentage}%
-                    </p>
-                    <p className="text-sm text-gray-600">Avg Match</p>
-                  </div>
-                </div>
+              <div className="text-center">
+                <LoadingSpinner />
+                <p className="text-gray-600 mt-4">Uploading resumes...</p>
+                <p className="text-sm text-gray-500 mt-2">You'll be redirected to the progress page shortly</p>
               </div>
-
-              {/* Files Summary */}
-              <div className="card">
-                <h3 className="text-sm font-medium text-gray-500 mb-3">Files Summary</h3>
-                <div className="space-y-3 max-h-64 overflow-auto">
-                  {result.files?.map((file: any, idx: number) => (
-                    <div key={idx} className="border border-gray-200 rounded p-3">
-                      <p className="font-medium text-gray-900">{file.filename}</p>
-                      <div className="mt-2 flex items-center justify-between text-sm">
-                        <span className={`badge ${
-                          file.status === 'strong_match' ? 'badge-success' :
-                          file.status === 'partial_match' ? 'badge-warning' :
-                          'badge-danger'
-                        }`}>
-                          {file.status}
-                        </span>
-                        <span className="font-semibold text-gray-900">
-                          {file.match_percentage}%
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Batch ID */}
-              <div className="card bg-blue-50 border border-blue-200">
-                <p className="text-sm text-blue-600 font-medium mb-1">Batch ID</p>
-                <p className="font-mono text-sm font-bold text-blue-900 break-all">
-                  {result.batch_id}
-                </p>
-              </div>
-
-              {/* View Results Button */}
-              <button
-                onClick={handleViewResults}
-                className="btn-success w-full"
-              >
-                View Detailed Results
-              </button>
             </div>
           ) : (
             <div className="card text-center text-gray-500">
-              <p>Processing results will appear here</p>
+              <p>Upload resumes to start processing</p>
             </div>
           )}
         </div>

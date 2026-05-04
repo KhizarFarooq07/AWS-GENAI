@@ -8,6 +8,7 @@ from .dynamodb_service import DynamoDBService
 from .matching_service import MatchingService
 from .github_service import GitHubService
 from .s3_service import S3Service
+from .sqs_service import SQSService
 
 __all__ = [
     'TextractService',
@@ -16,5 +17,6 @@ __all__ = [
     'DynamoDBService',
     'MatchingService',
     'GitHubService',
-    'S3Service'
+    'S3Service',
+    'SQSService'
 ]

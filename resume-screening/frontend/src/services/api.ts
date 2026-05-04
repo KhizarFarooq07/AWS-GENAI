@@ -103,6 +103,20 @@ interface DownloadResponse {
   expires_in_seconds: number;
 }
 
+interface BatchStatusResponse {
+  batch_id: string;
+  job_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  total_files: number;
+  processed_files: number;
+  failed_files: number;
+  completion_percentage: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  errors?: Array<{ timestamp: string; message: string }>;
+}
+
 class APIClient {
   private client: AxiosInstance;
   private baseURL: string;
@@ -166,6 +180,14 @@ class APIClient {
     return response.data;
   }
 
+  // Batch Status API (for polling)
+  async getBatchStatus(batchId: string): Promise<BatchStatusResponse> {
+    const response = await this.client.get<BatchStatusResponse>(
+      `/batches/${batchId}/status`
+    );
+    return response.data;
+  }
+
   // Download API
   async getDownloadUrl(batchId: string, filename: string): Promise<DownloadResponse> {
     const response = await this.client.get<DownloadResponse>(
@@ -188,4 +210,4 @@ class APIClient {
 }
 
 export default new APIClient();
-export type { JobParseResponse, UploadResponse, ResultsResponse, DownloadResponse, AllJobsResponse, JobData, AllBatchesResponse, BatchSummary };
+export type { JobParseResponse, UploadResponse, ResultsResponse, DownloadResponse, BatchStatusResponse, AllJobsResponse, JobData, AllBatchesResponse, BatchSummary };

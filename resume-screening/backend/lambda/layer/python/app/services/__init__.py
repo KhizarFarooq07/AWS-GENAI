@@ -28,5 +28,6 @@ __all__ = [
     'ComprehendService',
     'DynamoDBService',
     'MatchingService',
-    'S3Service'
+    'S3Service',
+    'BedrockService'
 ]

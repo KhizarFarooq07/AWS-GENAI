@@ -15,7 +15,8 @@ from app.services import (
     ComprehendService,
     DynamoDBService,
     MatchingService,
-    S3Service
+    S3Service,
+    BedrockService
 )
 
 logger = logging.getLogger()
@@ -39,7 +40,8 @@ def _get_services():
             'comprehend': ComprehendService(),
             'dynamodb': DynamoDBService(),
             'matching': MatchingService(),
-            's3': S3Service()
+            's3': S3Service(),
+            'bedrock': BedrockService()
         }
     return _services
 
@@ -162,7 +164,39 @@ def process_resume(batch_id, candidate_id, s3_key, filename, job_id):
             logger.error(f"Save failed: {save_result['error']}")
             return {'status': 'error', 'error': f"Save: {save_result['error']}"}
         
-        # Step 6: Update batch progress
+        # Step 6: Score candidate with Bedrock Agent
+        logger.info("🤖 Scoring with Bedrock Agent")
+        bedrock_service = services['bedrock']
+        
+        # Build candidate and job data for Bedrock
+        candidate_data = {
+            'name': filename.replace('.pdf', ''),
+            'resume_text': text[:2000],  # First 2000 chars for context
+            'resume_skills': skills,
+            'resume_match_percentage': match_percentage,
+            'experience_level': exp_level,
+            'experience_years': 5,  # Default, can be extracted from Comprehend
+            'education': job_titles  # Using job titles as proxy
+        }
+        
+        # Get job details from DynamoDB for Bedrock context
+        job = dynamodb_service.get_job(job_id)
+        job_data = {
+            'job_title': job.get('job_title', 'Job'),
+            'required_skills': job.get('required_skills', []),
+            'job_description': job.get('job_description', '')[:5000],  # Truncate for context
+            'experience_requirements': job.get('experience_level', 'mid-level')
+        }
+        
+        # Call Bedrock
+        bedrock_result = bedrock_service.score_candidate_fit(candidate_data, job_data)
+        logger.info(f"📊 Bedrock score: {bedrock_result.get('fit_score')}/100 ({bedrock_result.get('recommendation')})")
+        
+        # Step 7: Update DynamoDB with Bedrock results
+        logger.info("💾 Saving Bedrock analysis")
+        _update_bedrock_results(batch_id, candidate_id, bedrock_result)
+        
+        # Step 8: Update batch progress
         logger.info("📊 Updating batch progress")
         _update_batch_progress(batch_id)
         
@@ -183,6 +217,33 @@ def process_resume(batch_id, candidate_id, s3_key, filename, job_id):
     except Exception as e:
         logger.error(f"💥 Process error: {str(e)}", exc_info=True)
         return {'status': 'error', 'error': str(e)}
+
+
+def _update_bedrock_results(batch_id, candidate_id, bedrock_result):
+    """Update DynamoDB with Bedrock AI analysis results"""
+    try:
+        services = _get_services()
+        dynamodb_service = services['dynamodb']
+        table = dynamodb_service.dynamodb.Table('resume_results')
+        
+        # Prepare update expression for Bedrock fields
+        update_kwargs = {
+            'Key': {'batch_id': batch_id, 'candidate_id': candidate_id},
+            'UpdateExpression': 'SET bedrock_fit_score = :score, bedrock_reasoning = :reasoning, bedrock_strengths = :strengths, bedrock_gaps = :gaps, bedrock_recommendation = :recommendation',
+            'ExpressionAttributeValues': {
+                ':score': bedrock_result.get('fit_score', 50),
+                ':reasoning': bedrock_result.get('reasoning', ''),
+                ':strengths': bedrock_result.get('strengths', []),
+                ':gaps': bedrock_result.get('gaps', []),
+                ':recommendation': bedrock_result.get('recommendation', 'MAYBE')
+            }
+        }
+        
+        table.update_item(**update_kwargs)
+        logger.info(f"✅ Bedrock results saved for {candidate_id}")
+    
+    except Exception as e:
+        logger.error(f"Failed to save Bedrock results: {str(e)}", exc_info=True)
 
 
 def _update_batch_progress(batch_id):

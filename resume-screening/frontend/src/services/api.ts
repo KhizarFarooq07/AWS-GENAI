@@ -94,6 +94,11 @@ interface ResultsResponse {
     experience_level: string;
     job_titles: string[];
     s3_url?: string;
+    bedrock_fit_score?: number;
+    bedrock_reasoning?: string;
+    bedrock_strengths?: string[];
+    bedrock_gaps?: string[];
+    bedrock_recommendation?: string;
   }>;
 }
 

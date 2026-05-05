@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { ArrowLeft, Download, ExternalLink } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { ArrowLeft, Download } from 'lucide-react';
 import api, { ResultsResponse, BatchStatusResponse } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -18,7 +18,7 @@ export default function Results() {
 
   // Polling effect for batch status
   useEffect(() => {
-    let pollInterval: NodeJS.Timeout | null = null;
+    let pollInterval: any = null;
 
     const fetchBatchStatus = async () => {
       try {
@@ -255,7 +255,7 @@ export default function Results() {
     { name: 'Not Qualified', value: results.summary.not_qualified, fill: '#ef4444' },
   ].filter(item => item.value > 0);
 
-  const scoreData = results.candidates.map((c, idx) => ({
+  const scoreData = results.candidates.map((c) => ({
     name: `${c.filename.replace('.pdf', '').substring(0, 15)}...`,
     score: c.match_percentage,
   }));
@@ -497,6 +497,76 @@ export default function Results() {
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* AI Candidate Assessment (Bedrock) */}
+            {candidate.bedrock_fit_score !== undefined && (
+              <div className="card border-2 border-purple-200 bg-purple-50">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-purple-900">🤖 AI Candidate Assessment</h3>
+                  <span className={`badge text-sm py-1 px-3 ${
+                    candidate.bedrock_recommendation === 'INTERVIEW' ? 'badge-success' :
+                    candidate.bedrock_recommendation === 'PASS' ? 'badge-danger' :
+                    'badge-warning'
+                  }`}>
+                    {candidate.bedrock_recommendation === 'INTERVIEW' ? '✓ INTERVIEW' :
+                     candidate.bedrock_recommendation === 'PASS' ? '✗ PASS' :
+                     '? MAYBE'}
+                  </span>
+                </div>
+
+                {/* Bedrock Fit Score */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-purple-700">AI Fit Score</p>
+                    <span className="text-2xl font-bold text-purple-600">{candidate.bedrock_fit_score}/100</span>
+                  </div>
+                  <div className="bg-purple-200 rounded-full h-2">
+                    <div
+                      className="bg-purple-600 h-2 rounded-full"
+                      style={{ width: `${candidate.bedrock_fit_score}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Reasoning */}
+                {candidate.bedrock_reasoning && (
+                  <div className="mb-4 p-3 bg-white rounded-lg border border-purple-200">
+                    <p className="text-sm text-gray-600 mb-2">Analysis</p>
+                    <p className="text-sm text-gray-900 leading-relaxed">{candidate.bedrock_reasoning}</p>
+                  </div>
+                )}
+
+                {/* Strengths */}
+                {candidate.bedrock_strengths && candidate.bedrock_strengths.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs font-medium text-green-700 mb-2">✓ Strengths</p>
+                    <ul className="text-xs text-gray-700 space-y-1">
+                      {candidate.bedrock_strengths.map((strength: string, idx: number) => (
+                        <li key={idx} className="flex gap-2">
+                          <span className="text-green-600 mt-0.5">•</span>
+                          <span>{strength}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Gaps */}
+                {candidate.bedrock_gaps && candidate.bedrock_gaps.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-red-700 mb-2">✗ Areas for Growth</p>
+                    <ul className="text-xs text-gray-700 space-y-1">
+                      {candidate.bedrock_gaps.map((gap: string, idx: number) => (
+                        <li key={idx} className="flex gap-2">
+                          <span className="text-red-600 mt-0.5">•</span>
+                          <span>{gap}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>

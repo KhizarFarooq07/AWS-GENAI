@@ -26,8 +26,10 @@ class Config:
     GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     
     # Bedrock
-    BEDROCK_MODEL_ID = os.getenv('BEDROCK_MODEL_ID', 'claude-3-sonnet-20240229')
+    BEDROCK_MODEL_ID = os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-5-haiku-20241022-v1:0')
     BEDROCK_REGION = os.getenv('BEDROCK_REGION', 'us-east-1')
+    BEDROCK_AGENT_ID = os.getenv('BEDROCK_AGENT_ID')
+    BEDROCK_AGENT_ALIAS = os.getenv('BEDROCK_AGENT_ALIAS', 'TSTALIASID')
     
     # File Upload
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'uploads')

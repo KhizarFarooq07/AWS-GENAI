@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, Plus, Upload, ChevronRight } from 'lucide-react';
+import { Briefcase, Plus, Upload } from 'lucide-react';
 import api, { JobData } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 

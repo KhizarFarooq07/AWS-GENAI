@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Upload as UploadIcon, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
+import { Upload as UploadIcon, CheckCircle, AlertCircle } from 'lucide-react';
 import api, { JobData } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 

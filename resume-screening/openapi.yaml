@@ -1,0 +1,341 @@
+openapi: 3.0.0
+info:
+  title: Resume Screening API
+  description: AI-powered resume screening and candidate matching with Bedrock integration
+  version: 1.0.0
+  contact:
+    name: Resume Match Team
+
+servers:
+  - url: https://API_ENDPOINT_HERE
+    description: Production API
+
+paths:
+  /api/resumes/upload:
+    post:
+      operationId: uploadResumes
+      summary: Upload resumes for async processing
+      description: Upload PDF resumes for batch processing. Returns immediately with batch_id. Processing happens async via Lambda.
+      tags:
+        - Resumes
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: PDF files to upload
+                job_id:
+                  type: string
+                  description: Job ID to match candidates against
+              required:
+                - files
+                - job_id
+      responses:
+        '202':
+          description: Batch accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Unique batch identifier
+                  job_id:
+                    type: string
+                  total_files:
+                    type: integer
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error
+
+  /api/jobs/parse:
+    post:
+      operationId: parseJob
+      summary: Parse job description
+      description: Parse job description to extract required skills, experience level, etc.
+      tags:
+        - Jobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_description:
+                  type: string
+                  description: Job description text
+              required:
+                - job_description
+      responses:
+        '201':
+          description: Job parsed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  job_title:
+                    type: string
+                  required_skills:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        skill:
+                          type: string
+                        confidence:
+                          type: number
+                  experience_level:
+                    type: string
+        '400':
+          description: Invalid request
+
+  /api/jobs:
+    get:
+      operationId: listJobs
+      summary: List all jobs
+      description: Get list of all parsed jobs
+      tags:
+        - Jobs
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        job_id:
+                          type: string
+                        job_title:
+                          type: string
+                        required_skills:
+                          type: array
+                          items:
+                            type: string
+                        experience_level:
+                          type: string
+                  total:
+                    type: integer
+
+  /api/results/{batch_id}:
+    get:
+      operationId: getResults
+      summary: Get batch results
+      description: Get processing results and ranked candidates for a batch
+      tags:
+        - Results
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Batch results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [processing, complete]
+                  summary:
+                    type: object
+                    properties:
+                      total_candidates:
+                        type: integer
+                      strong_matches:
+                        type: integer
+                      partial_matches:
+                        type: integer
+                      not_qualified:
+                        type: integer
+                      avg_match_percentage:
+                        type: number
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        filename:
+                          type: string
+                        match_percentage:
+                          type: number
+                        status:
+                          type: string
+                        matched_skills:
+                          type: array
+                          items:
+                            type: string
+                        missing_skills:
+                          type: array
+                          items:
+                            type: string
+                        bonus_skills:
+                          type: array
+                          items:
+                            type: string
+                        bedrock_fit_score:
+                          type: number
+                          description: AI fit score (0-100) from Bedrock Agent
+                        bedrock_reasoning:
+                          type: string
+                          description: AI reasoning for the fit score
+                        bedrock_strengths:
+                          type: array
+                          items:
+                            type: string
+                        bedrock_gaps:
+                          type: array
+                          items:
+                            type: string
+                        bedrock_recommendation:
+                          type: string
+                          enum: [INTERVIEW, MAYBE, PASS]
+
+  /api/batches/{batch_id}/status:
+    get:
+      operationId: getBatchStatus
+      summary: Get batch processing status
+      description: Get current processing status of a batch
+      tags:
+        - Batches
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Batch status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending, processing, completed, failed]
+                  processed_files:
+                    type: integer
+                  total_files:
+                    type: integer
+                  completion_percentage:
+                    type: integer
+                  failed_files:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: object
+
+  /api/download/{batch_id}/{filename}:
+    get:
+      operationId: downloadResume
+      summary: Download resume from batch
+      description: Get presigned S3 URL to download a resume file
+      tags:
+        - Downloads
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Presigned download URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  download_url:
+                    type: string
+
+  /api/batches:
+    get:
+      operationId: listBatches
+      summary: List all batches
+      description: Get list of all processing batches
+      tags:
+        - Batches
+      responses:
+        '200':
+          description: List of batches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  batches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        batch_id:
+                          type: string
+                        job_id:
+                          type: string
+                        created_at:
+                          type: string
+                        total_candidates:
+                          type: integer
+                        strong_matches:
+                          type: integer
+                        partial_matches:
+                          type: integer
+                        not_qualified:
+                          type: integer
+                        avg_match_percentage:
+                          type: number
+                  total:
+                    type: integer
+
+tags:
+  - name: Resumes
+    description: Resume upload and processing
+  - name: Jobs
+    description: Job parsing and management
+  - name: Results
+    description: Batch results and candidate matching
+  - name: Batches
+    description: Batch status and tracking
+  - name: Downloads
+    description: File downloads

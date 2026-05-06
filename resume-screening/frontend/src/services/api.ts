@@ -1,9 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
 
-interface JobParseRequest {
-  job_description: string;
-}
-
 interface JobParseResponse {
   job_id: string;
   status: string;

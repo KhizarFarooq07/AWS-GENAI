@@ -94,15 +94,18 @@ class S3Service:
             # Create S3 key with batch organization
             s3_key = f"resumes/{batch_id}/{filename}"
 
-            # Upload file
-            self.s3_client.upload_file(
-                file_path,
-                self.bucket_name,
-                s3_key,
-                ExtraArgs={'ContentType': 'application/pdf'}
+            # Upload file using put_object with binary read — avoids multipart corruption
+            with open(file_path, 'rb') as f:
+                file_data = f.read()
+
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Body=file_data,
+                ContentType='application/pdf'
             )
 
-            file_size = os.path.getsize(file_path)
+            file_size = len(file_data)
             s3_url = f"s3://{self.bucket_name}/{s3_key}"
 
             logger.info(f"✅ Uploaded {filename} to S3: {s3_url} ({file_size} bytes)")

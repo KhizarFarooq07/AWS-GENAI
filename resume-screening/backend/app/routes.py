@@ -274,6 +274,14 @@ def get_results(batch_id):
                 candidate['textract_confidence'] = float(candidate['textract_confidence'])
             if 'comprehend_confidence' in candidate:
                 candidate['comprehend_confidence'] = float(candidate['comprehend_confidence'])
+            if 'github_public_repos' in candidate:
+                candidate['github_public_repos'] = int(candidate['github_public_repos'])
+            if 'github_followers' in candidate:
+                candidate['github_followers'] = int(candidate['github_followers'])
+            if 'github_total_stars' in candidate:
+                candidate['github_total_stars'] = int(candidate['github_total_stars'])
+            if 'github_total_forks' in candidate:
+                candidate['github_total_forks'] = int(candidate['github_total_forks'])
         
         current_app.logger.info(f'Retrieved {total_candidates} candidates from batch {batch_id}')
         

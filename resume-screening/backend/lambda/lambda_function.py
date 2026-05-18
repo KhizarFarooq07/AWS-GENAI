@@ -18,6 +18,7 @@ from app.services import (
     S3Service,
     BedrockService
 )
+from app.services.github_service import GitHubService
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -41,7 +42,8 @@ def _get_services():
             'dynamodb': DynamoDBService(),
             'matching': MatchingService(),
             's3': S3Service(),
-            'bedrock': BedrockService()
+            'bedrock': BedrockService(),
+            'github': GitHubService()
         }
     return _services
 
@@ -196,7 +198,18 @@ def process_resume(batch_id, candidate_id, s3_key, filename, job_id):
         logger.info("💾 Saving Bedrock analysis")
         _update_bedrock_results(batch_id, candidate_id, bedrock_result)
         
-        # Step 8: Update batch progress
+        # Step 8: Fetch GitHub stats via MCP (non-blocking — failure won't affect scoring)
+        logger.info("🐙 Fetching GitHub stats via MCP")
+        github_service = services['github']
+        github_username = github_service.extract_github_username(text)
+        if github_username:
+            logger.info(f"Found GitHub username in resume: {github_username}")
+            github_stats = github_service.fetch_github_stats(github_username)
+            _save_github_stats(batch_id, candidate_id, github_stats)
+        else:
+            logger.info("No GitHub username found in resume")
+
+        # Step 9: Update batch progress
         logger.info("📊 Updating batch progress")
         _update_batch_progress(batch_id)
         
@@ -217,6 +230,39 @@ def process_resume(batch_id, candidate_id, s3_key, filename, job_id):
     except Exception as e:
         logger.error(f"💥 Process error: {str(e)}", exc_info=True)
         return {'status': 'error', 'error': str(e)}
+
+
+def _save_github_stats(batch_id, candidate_id, github_stats):
+    """Persist GitHub MCP stats to DynamoDB (display only, not used in scoring)"""
+    try:
+        services = _get_services()
+        dynamodb_service = services['dynamodb']
+        table = dynamodb_service.dynamodb.Table('resume_results')
+
+        table.update_item(
+            Key={'batch_id': batch_id, 'candidate_id': candidate_id},
+            UpdateExpression=(
+                'SET github_username = :u, github_profile_url = :url, '
+                'github_public_repos = :repos, github_followers = :followers, '
+                'github_total_stars = :stars, github_total_forks = :forks, '
+                'github_languages = :langs, github_top_repos = :top_repos, '
+                'github_status = :status'
+            ),
+            ExpressionAttributeValues={
+                ':u': github_stats.get('username', ''),
+                ':url': github_stats.get('profile_url', ''),
+                ':repos': github_stats.get('public_repos', 0),
+                ':followers': github_stats.get('followers', 0),
+                ':stars': github_stats.get('total_stars', 0),
+                ':forks': github_stats.get('total_forks', 0),
+                ':langs': github_stats.get('languages', []),
+                ':top_repos': github_stats.get('top_repos', []),
+                ':status': github_stats.get('status', 'error'),
+            }
+        )
+        logger.info(f"✅ GitHub stats saved for {candidate_id}: {github_stats.get('username')}")
+    except Exception as e:
+        logger.error(f"Failed to save GitHub stats: {e}", exc_info=True)
 
 
 def _update_bedrock_results(batch_id, candidate_id, bedrock_result):

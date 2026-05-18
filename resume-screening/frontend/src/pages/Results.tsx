@@ -500,9 +500,90 @@ export default function Results() {
               </div>
             )}
 
+            {/* GitHub Stats (via Bedrock MCP) */}
+            {candidate.github_username && candidate.github_status === 'success' && (
+              <div className="card border-2 border-gray-800 bg-gray-50">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <span>🐙</span> GitHub Profile
+                  </h3>
+                  <a
+                    href={candidate.github_profile_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline font-mono"
+                  >
+                    @{candidate.github_username}
+                  </a>
+                </div>
+
+                {/* Stats row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  <div className="bg-white rounded-lg p-3 text-center border">
+                    <p className="text-2xl font-bold text-gray-900">{candidate.github_public_repos ?? 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">Public Repos</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 text-center border">
+                    <p className="text-2xl font-bold text-yellow-600">{candidate.github_total_stars ?? 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">⭐ Total Stars</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 text-center border">
+                    <p className="text-2xl font-bold text-blue-600">{candidate.github_total_forks ?? 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">🍴 Total Forks</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 text-center border">
+                    <p className="text-2xl font-bold text-green-600">{candidate.github_followers ?? 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">Followers</p>
+                  </div>
+                </div>
+
+                {/* Languages */}
+                {candidate.github_languages && candidate.github_languages.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-gray-600 mb-2">Languages</p>
+                    <div className="flex flex-wrap gap-1">
+                      {candidate.github_languages.map((lang: string, idx: number) => (
+                        <span key={idx} className="badge badge-info text-xs">{lang}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Top Repos */}
+                {candidate.github_top_repos && candidate.github_top_repos.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-2">Top Repositories</p>
+                    <div className="space-y-2">
+                      {candidate.github_top_repos.map((repo: any, idx: number) => (
+                        <div key={idx} className="bg-white rounded p-2 border flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <a
+                              href={repo.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-semibold text-blue-600 hover:underline truncate block"
+                            >
+                              {repo.name}
+                            </a>
+                            {repo.description && (
+                              <p className="text-xs text-gray-500 truncate">{repo.description}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 ml-3 text-xs text-gray-600 shrink-0">
+                            <span>⭐ {repo.stars}</span>
+                            <span>🍴 {repo.forks}</span>
+                            {repo.language && <span className="badge badge-info">{repo.language}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* AI Candidate Assessment (Bedrock) */}
-            {candidate.bedrock_fit_score !== undefined && (
-              <div className="card border-2 border-purple-200 bg-purple-50">
+            {candidate.bedrock_fit_score !== undefined && (              <div className="card border-2 border-purple-200 bg-purple-50">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-purple-900">🤖 AI Candidate Assessment</h3>
                   <span className={`badge text-sm py-1 px-3 ${

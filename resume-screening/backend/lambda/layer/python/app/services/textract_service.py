@@ -157,6 +157,53 @@ class TextractService:
                 'blocks': []
             }
     
+    def extract_text_from_s3(self, bucket, key):
+        """
+        Extract text directly from an S3 object using Textract.
+        Passes S3 reference directly — no /tmp download needed.
+        """
+        logger.info(f'Extracting text from S3: s3://{bucket}/{key}')
+
+        try:
+            response = self.client.detect_document_text(
+                Document={
+                    'S3Object': {
+                        'Bucket': bucket,
+                        'Name': key
+                    }
+                }
+            )
+
+            text = self._parse_textract_response(response)
+            pages = response.get('DocumentMetadata', {}).get('Pages', 1)
+            confidence = self._calculate_confidence(response)
+
+            if not text.strip():
+                logger.warning(f'No extractable text found in s3://{bucket}/{key}')
+                return {
+                    'status': 'error',
+                    'error': 'No extractable text found',
+                    'text': None
+                }
+
+            logger.info(f'Successfully extracted {len(text)} chars from {pages} page(s)')
+
+            return {
+                'status': 'success',
+                'text': text,
+                'pages': pages,
+                'confidence': confidence
+            }
+
+        except Exception as e:
+            error_msg = f'S3 Textract extraction failed: {str(e)}'
+            logger.error(error_msg, exc_info=True)
+            return {
+                'status': 'error',
+                'error': error_msg,
+                'text': None
+            }
+
     def _parse_textract_response(self, response):
         """Parse Textract response and extract full text"""
         full_text = []

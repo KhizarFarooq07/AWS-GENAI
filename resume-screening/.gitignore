@@ -2,7 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
 build/
 develop-eggs/
@@ -45,6 +44,75 @@ env/
 # Uploads
 uploads/
 temp/
+
+# Lambda layer — third-party packages (rebuilt via scripts/build_layer.sh)
+# The app/ subfolder inside python/ IS committed (it's our code)
+backend/lambda/layer/python/annotated_types/
+backend/lambda/layer/python/annotated_types-*.dist-info/
+backend/lambda/layer/python/anyio/
+backend/lambda/layer/python/anyio-*.dist-info/
+backend/lambda/layer/python/attr/
+backend/lambda/layer/python/attrs/
+backend/lambda/layer/python/attrs-*.dist-info/
+backend/lambda/layer/python/bin/
+backend/lambda/layer/python/certifi/
+backend/lambda/layer/python/certifi-*.dist-info/
+backend/lambda/layer/python/cffi/
+backend/lambda/layer/python/cffi-*.dist-info/
+# cffi installs its C extension directly in python/ root
+backend/lambda/layer/python/_cffi_backend*.so
+backend/lambda/layer/python/click/
+backend/lambda/layer/python/click-*.dist-info/
+backend/lambda/layer/python/cryptography/
+backend/lambda/layer/python/cryptography-*.dist-info/
+backend/lambda/layer/python/dotenv/
+backend/lambda/layer/python/h11/
+backend/lambda/layer/python/h11-*.dist-info/
+backend/lambda/layer/python/httpcore/
+backend/lambda/layer/python/httpcore-*.dist-info/
+backend/lambda/layer/python/httpx/
+backend/lambda/layer/python/httpx_sse/
+backend/lambda/layer/python/httpx_sse-*.dist-info/
+backend/lambda/layer/python/httpx-*.dist-info/
+backend/lambda/layer/python/idna/
+backend/lambda/layer/python/idna-*.dist-info/
+backend/lambda/layer/python/jsonschema/
+backend/lambda/layer/python/jsonschema_specifications/
+backend/lambda/layer/python/jsonschema_specifications-*.dist-info/
+backend/lambda/layer/python/jsonschema-*.dist-info/
+backend/lambda/layer/python/jwt/
+backend/lambda/layer/python/mcp/
+backend/lambda/layer/python/mcp-*.dist-info/
+backend/lambda/layer/python/multipart/
+backend/lambda/layer/python/pycparser/
+backend/lambda/layer/python/pycparser-*.dist-info/
+backend/lambda/layer/python/pydantic/
+backend/lambda/layer/python/pydantic_core/
+backend/lambda/layer/python/pydantic_core-*.dist-info/
+backend/lambda/layer/python/pydantic_settings/
+backend/lambda/layer/python/pydantic_settings-*.dist-info/
+backend/lambda/layer/python/pydantic-*.dist-info/
+backend/lambda/layer/python/pyjwt-*.dist-info/
+backend/lambda/layer/python/python_dotenv-*.dist-info/
+backend/lambda/layer/python/python_multipart/
+backend/lambda/layer/python/python_multipart-*.dist-info/
+backend/lambda/layer/python/referencing/
+backend/lambda/layer/python/referencing-*.dist-info/
+backend/lambda/layer/python/rpds/
+backend/lambda/layer/python/rpds_py-*.dist-info/
+backend/lambda/layer/python/sse_starlette/
+backend/lambda/layer/python/sse_starlette-*.dist-info/
+backend/lambda/layer/python/starlette/
+backend/lambda/layer/python/starlette-*.dist-info/
+backend/lambda/layer/python/typing_extensions.py
+backend/lambda/layer/python/typing_extensions-*.dist-info/
+backend/lambda/layer/python/typing_inspection/
+backend/lambda/layer/python/typing_inspection-*.dist-info/
+backend/lambda/layer/python/uvicorn/
+backend/lambda/layer/python/uvicorn-*.dist-info/
+backend/lambda/layer/python/config.py
+# Built zip
+backend/lambda/layer/layer.zip
 
 # Node/Frontend
 node_modules/

@@ -1,136 +1,77 @@
 """
-GitHub MCP Server — Tool Definitions + Executor
-================================================
-This module does two things:
+GitHub MCP Server
+=================
+A real MCP server using the official MCP Python SDK.
+Exposes GitHub data as tools via the @mcp.tool() decorator.
 
-1. TOOL DEFINITIONS (MCP schema)
-   Defines the tool schemas that get sent to Claude (Bedrock) so Claude
-   knows what tools are available and what arguments they expect.
+This server is spawned as a subprocess by GitHubService (the MCP client).
+Communication happens over stdio using the MCP JSON-RPC protocol.
 
-2. TOOL EXECUTOR
-   Implements execute_tool() which carries out whatever tool call
-   Claude requests (get_user_profile, get_user_repos).
-
-MCP Flow (orchestrated by GitHubService via Bedrock):
-
-  GitHubService
-      └── sends tool schemas + prompt to Claude (Bedrock Converse API)
-              └── Claude decides: "I need to call get_user_profile"
-              └── GitHubService calls execute_tool("get_user_profile", {...})
-                      └── this file executes the GitHub REST API call
-              └── GitHubService feeds result back to Claude
-              └── Claude calls get_user_repos next
-              └── GitHubService feeds result back
-              └── Claude returns final synthesized summary
+MCP Flow:
+  GitHubService (MCP Client)
+      └── spawns subprocess: python3 github_mcp_server.py
+              └── MCP handshake (initialize)
+              └── ClientSession.call_tool("get_user_profile", {username})
+              └── ClientSession.call_tool("get_user_repos", {username})
+              └── Returns results via MCP protocol over stdio
 """
 
 import json
 import logging
 import os
+import ssl
 import urllib.request
 import urllib.error
 import urllib.parse
+
+from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 
-# ─── Tool Schemas (sent to Claude via Bedrock) ────────────────────────────────
-# These follow the Bedrock Converse API tool spec format.
+# Use certifi CA bundle if available (needed on macOS dev); Lambda has system certs
+try:
+    import certifi
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    _SSL_CTX = ssl.create_default_context()
 
-TOOL_DEFINITIONS = [
-    {
-        "toolSpec": {
-            "name": "get_user_profile",
-            "description": (
-                "Fetch a GitHub user's public profile statistics including "
-                "number of public repositories, followers, following count, "
-                "bio, company, and profile URL."
-            ),
-            "inputSchema": {
-                "json": {
-                    "type": "object",
-                    "properties": {
-                        "username": {
-                            "type": "string",
-                            "description": "The GitHub username to look up (e.g. 'torvalds')"
-                        }
-                    },
-                    "required": ["username"]
-                }
-            }
-        }
-    },
-    {
-        "toolSpec": {
-            "name": "get_user_repos",
-            "description": (
-                "Fetch a GitHub user's top public repositories sorted by stars. "
-                "Returns repo names, star counts, fork counts, primary language, "
-                "and aggregate totals."
-            ),
-            "inputSchema": {
-                "json": {
-                    "type": "object",
-                    "properties": {
-                        "username": {
-                            "type": "string",
-                            "description": "The GitHub username"
-                        },
-                        "max_repos": {
-                            "type": "integer",
-                            "description": "Maximum number of repos to return (default 5)",
-                            "default": 5
-                        }
-                    },
-                    "required": ["username"]
-                }
-            }
-        }
-    }
-]
+# Create the MCP server — name identifies this server to clients
+mcp = FastMCP("github-mcp-server")
 
 
-# ─── Tool Executor ────────────────────────────────────────────────────────────
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _github_get(url: str, params: dict = None) -> dict:
-    """Make a GitHub API GET request using urllib (no external dependencies)."""
+    """HTTP GET to GitHub API using stdlib urllib (no external deps)."""
     if params:
-        query = urllib.parse.urlencode(params)
-        url = f"{url}?{query}"
+        url = f"{url}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github.v3+json")
     if GITHUB_TOKEN:
         req.add_header("Authorization", f"token {GITHUB_TOKEN}")
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=_SSL_CTX) as resp:
             return {"status": resp.status, "body": json.loads(resp.read())}
     except urllib.error.HTTPError as e:
         return {"status": e.code, "body": {}}
     except Exception as e:
+        logger.error(f"[github_mcp_server] _github_get error: {type(e).__name__}: {e}")
         return {"status": 0, "body": {"error": str(e)}}
 
 
-def execute_tool(tool_name: str, tool_input: dict) -> str:
+# ─── MCP Tools ────────────────────────────────────────────────────────────────
+# The @mcp.tool() decorator registers each function as an MCP tool.
+# The docstring becomes the tool description sent to the client.
+# Type annotations become the input schema.
+
+@mcp.tool()
+def get_user_profile(username: str) -> str:
     """
-    Execute the tool Claude requested and return the result as a JSON string.
-    This is called by GitHubService inside the Bedrock agentic loop.
+    Fetch a GitHub user's public profile statistics including
+    public_repos, followers, following, bio, company, and profile URL.
     """
-    logger.info(f"[MCP Tool] Executing: {tool_name}({tool_input})")
-
-    if tool_name == "get_user_profile":
-        return _get_user_profile(tool_input["username"])
-
-    if tool_name == "get_user_repos":
-        return _get_user_repos(
-            tool_input["username"],
-            tool_input.get("max_repos", 5)
-        )
-
-    return json.dumps({"error": f"Unknown tool: {tool_name}"})
-
-
-def _get_user_profile(username: str) -> str:
     result = _github_get(f"https://api.github.com/users/{username}")
     if result["status"] == 404:
         return json.dumps({"error": f"GitHub user '{username}' not found"})
@@ -151,7 +92,12 @@ def _get_user_profile(username: str) -> str:
     })
 
 
-def _get_user_repos(username: str, max_repos: int = 5) -> str:
+@mcp.tool()
+def get_user_repos(username: str, max_repos: int = 5) -> str:
+    """
+    Fetch a GitHub user's top public repositories sorted by stars.
+    Returns repo list with stars, forks, language, and aggregate totals.
+    """
     result = _github_get(
         f"https://api.github.com/users/{username}/repos",
         params={"sort": "stars", "direction": "desc", "per_page": max_repos, "type": "public"}
@@ -174,10 +120,14 @@ def _get_user_repos(username: str, max_repos: int = 5) -> str:
         for r in repos
     ]
     languages = list({r["language"] for r in repo_list if r.get("language")})
-
     return json.dumps({
         "repos": repo_list,
         "total_stars": sum(r["stars"] for r in repo_list),
         "total_forks": sum(r["forks"] for r in repo_list),
         "languages": languages,
     })
+
+
+if __name__ == "__main__":
+    # Run as MCP server over stdio when spawned as a subprocess
+    mcp.run(transport="stdio")
